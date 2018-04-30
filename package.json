@@ -1,11 +1,11 @@
 {
   "name": "threejs-glsl-loader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Webpack Loader that allows to load threejs inlined GLSL chunks.",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git@github.com:MONOGRID/glsl-threejs-loader.git"
+    "url": "git@github.com:MONOGRID/threejs-glsl-loader.git"
   },
   "keywords": [
     "glsl webpack loader",
@@ -18,7 +18,7 @@
     "webpack",
     "loader"
   ],
-  "homepage": "https://github.com/MONOGRID/glsl-threejs-loader.git",
+  "homepage": "https://github.com/MONOGRID/threejs-glsl-loader.git",
   "license": "MIT",
   "dependencies": {
     "string-replace-async": "^1.2.1",
