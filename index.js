@@ -65,13 +65,13 @@ function transformChunks(source, {chunksPath, chunksExt}, loader) {
         });
       })
       .then(res => {
-        callback(null, `module.exports = \`${res}\`;`)
+        callback(null, `module.exports = \'${res.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`)
       }).catch(err => {
         callback(err)
       })
   } else {
-    // so includes, return string as it is
-    callback(null, `module.exports = \`${source}\`;`);
+    // no includes, return string as it is
+    callback(null, `module.exports = \'${source.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`);
   }
 }
 

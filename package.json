@@ -1,6 +1,6 @@
 {
   "name": "threejs-glsl-loader",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A Webpack Loader that allows to load threejs inlined GLSL chunks.",
   "main": "index.js",
   "repository": {
