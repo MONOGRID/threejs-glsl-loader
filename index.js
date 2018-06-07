@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const loaderUtils = require("loader-utils");
-const replaceAsync = require("string-replace-async");
+
+const loaderUtils = require('loader-utils');
+const replaceAsync = require('string-replace-async');
 
 const DEFAULT_CHUNKS_EXT = 'glsl';
 const DEFAULT_CHUNKS_PATH = '../ShaderChunk';
@@ -27,52 +28,80 @@ function readFile(filePath, options) {
   });
 }
 
-function transformChunks(source, {chunksPath, chunksExt}, loader) {
-  loader.cacheable();
+function replaceGLSL(match, includePath, chunksPath, chunksExt, loader) {
+  includePath = includePath.trim().replace(/;|<|>/ig, '');
+
+  const ext = path.extname(includePath);
+  if(!ext) includePath = `${includePath}.${chunksExt}`;
+
+  const context = path.dirname(loader.resource);
+
+  return resolveDependency(loader, context, includePath)
+    .catch(err => { })
+
+    .then(chunkPath => {
+      if (chunkPath) {
+        loader.addDependency(chunkPath);
+        return readFile(chunkPath, 'utf-8');
+      }
+
+      return resolveDependency(loader, path.resolve(context, chunksPath), includePath)
+        .then(chunkPath => {
+          loader.addDependency(chunkPath);
+          return readFile(chunkPath, 'utf-8');
+        })
+    })
+
+    .then(file => {
+      return file.content;
+    });
+}
+
+function includeGLSLFile(source, chunksPath, chunksExt, loader, currentPath = './') {
+  const include = /#include(\s+)[^<](.+)[^>]/;
   const callback = loader.async();
 
-  if (source.indexOf('#include') !== -1) {
-    // some includes detected, replace them (asyncronously)
+  if (source.includes('/*') && source.includes('*/')) {
+    source.slice(0, source.indexOf('/*')) + source.slice(source.indexOf('*/') + 2, source.length);
+  }
 
-    replaceAsync(source,/#include (.*);/ig, (match, includePath) => {
-      includePath = './' + includePath.trim().replace(/;|<|>|.\//ig, '');
+  const shader = source.split('\n');
 
-      const ext = path.extname(includePath);
-      if(!ext) includePath = `${includePath}.${chunksExt}`;
+  for (let i = 0; i < shader.length; i++) {
+    if (shader[i].includes('//')) {
+      shader[i] = '';
+    }
+  }
 
-      const context = path.dirname(loader.resource)
+  source = shader.join('\n');
 
-      return resolveDependency(loader, context, includePath)
-        .catch(err => {
-          // catch this, we'll retry with chunkPath
-        })
-        .then(chunkPath => {
-          if (chunkPath) {
-            // load was successful
-            loader.addDependency(chunkPath);
-            return readFile(chunkPath, 'utf-8');
-          }
-          // no cigar, retry chunkPath
-          return resolveDependency(loader, path.resolve(context, chunksPath), includePath)
-            .then(chunkPath => {
-              // success
-              loader.addDependency(chunkPath);
-              return readFile(chunkPath, 'utf-8');
-            })
-        })
-        .then(file => {
-          return file.content
-        });
-      })
-      .then(res => {
-        callback(null, `module.exports = \'${res.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`)
-      }).catch(err => {
-        callback(err)
-      })
+  if (include.test(source)) {
+    replaceAsync(source, /#include (.*);/ig, (match, includePath) => {
+      const pathIndex = includePath.trim().lastIndexOf('/');
+
+      if (pathIndex !== -1) {
+        currentPath = includePath.slice(0, pathIndex + 1);
+        includePath = includePath.slice(pathIndex + 1, includePath.length);
+      }
+
+      return replaceGLSL(match, currentPath + includePath, chunksPath, chunksExt, loader);
+    })
+
+    .then(res => {
+      includeGLSLFile(res, chunksPath, chunksExt, loader, currentPath);
+    })
+
+    .catch(err => {
+      callback(err);
+    })
   } else {
-    // no includes, return string as it is
     callback(null, `module.exports = \'${source.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`);
   }
+}
+
+function transformChunks(source, {chunksPath, chunksExt}, loader) {
+  loader.cacheable();
+  includeGLSLFile(source, chunksPath, chunksExt, loader);
 }
 
 module.exports = function(source) {
