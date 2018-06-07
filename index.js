@@ -28,14 +28,7 @@ function readFile(filePath, options) {
   });
 }
 
-function replaceGLSL(match, includePath, chunksPath, chunksExt, loader) {
-  includePath = includePath.trim().replace(/;|<|>/ig, '');
-
-  const ext = path.extname(includePath);
-  if(!ext) includePath = `${includePath}.${chunksExt}`;
-
-  const context = path.dirname(loader.resource);
-
+function returnDependencyPromise(loader, context, includePath) {
   return resolveDependency(loader, context, includePath)
     .catch(err => { })
 
@@ -55,6 +48,16 @@ function replaceGLSL(match, includePath, chunksPath, chunksExt, loader) {
     .then(file => {
       return file.content;
     });
+}
+
+function replaceGLSL(match, includePath, chunksPath, chunksExt, loader) {
+  includePath = includePath.trim().replace(/;|<|>/ig, '');
+
+  const ext = path.extname(includePath);
+  if(!ext) includePath = `${includePath}.${chunksExt}`;
+
+  const context = path.dirname(loader.resource);
+  return returnDependencyPromise(loader, context, includePath);
 }
 
 function includeGLSLFile(source, chunksPath, chunksExt, loader, currentPath = './') {
@@ -116,35 +119,16 @@ function transformChunks(source, {chunksPath, chunksExt}, loader) {
         if(!ext) includePath = `${includePath}.${chunksExt}`;
 
         const context = path.dirname(loader.resource);
+        return returnDependencyPromise(loader, context, includePath);
+      })
 
-        return resolveDependency(loader, context, includePath)
-          .catch(err => { })
+      .then(res => {
+        callback(null, `module.exports = \'${res.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`)
+      })
 
-          .then(chunkPath => {
-            if (chunkPath) {
-              loader.addDependency(chunkPath);
-              return readFile(chunkPath, 'utf-8');
-            }
-
-            return resolveDependency(loader, path.resolve(context, chunksPath), includePath)
-              .then(chunkPath => {
-                loader.addDependency(chunkPath);
-                return readFile(chunkPath, 'utf-8');
-              })
-          })
-
-          .then(file => {
-            return file.content
-          });
-        })
-
-        .then(res => {
-          callback(null, `module.exports = \'${res.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`)
-        })
-
-        .catch(err => {
-          callback(err)
-        })
+      .catch(err => {
+        callback(err)
+      })
     } else {
       callback(null, `module.exports = \'${source.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`);
     }
