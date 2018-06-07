@@ -24,9 +24,11 @@ module: {
 ``` glsl
 // The content of chunks/a-chunk.glsl file will be inlined here as string
 // the loader will first try to load from the specified path (relative to the current glsl file)
+// Please, do not specify `./` if the additional file you're going to load resides in the same directory,
+// this will give an error. However, adding `../` will let you move to upper level folder to search required file in there.
 #include chunks/a-chunk.glsl;
 
-// this is how threejs specifies its chunks in its .glsl files
+// This is how Three.js specifies its chunks in its .glsl files
 // the loader will ignore <> characters and append chunksExt
 // the loader will then try to load the chunk from the same folder as the current glsl file
 // if this fails it will try to load the chunk from the specified chunksPath config argument
