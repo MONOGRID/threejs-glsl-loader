@@ -101,7 +101,56 @@ function includeGLSLFile(source, chunksPath, chunksExt, loader, currentPath = '.
 
 function transformChunks(source, {chunksPath, chunksExt}, loader) {
   loader.cacheable();
-  includeGLSLFile(source, chunksPath, chunksExt, loader);
+
+  const THREE_SHADER = path.dirname(loader.resource).includes('ShaderLib') ||
+                       path.dirname(loader.resource).includes('ShaderChunk');
+
+  if (THREE_SHADER) {
+    const callback = loader.async();
+
+    if (source.indexOf('#include') !== -1) {
+      replaceAsync(source, /#include (.*);/ig, (match, includePath) => {
+        includePath = './' + includePath.trim().replace(/;|<|>|.\//ig, '');
+
+        const ext = path.extname(includePath);
+        if(!ext) includePath = `${includePath}.${chunksExt}`;
+
+        const context = path.dirname(loader.resource);
+
+        return resolveDependency(loader, context, includePath)
+          .catch(err => { })
+
+          .then(chunkPath => {
+            if (chunkPath) {
+              loader.addDependency(chunkPath);
+              return readFile(chunkPath, 'utf-8');
+            }
+
+            return resolveDependency(loader, path.resolve(context, chunksPath), includePath)
+              .then(chunkPath => {
+                loader.addDependency(chunkPath);
+                return readFile(chunkPath, 'utf-8');
+              })
+          })
+
+          .then(file => {
+            return file.content
+          });
+        })
+
+        .then(res => {
+          callback(null, `module.exports = \'${res.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`)
+        })
+
+        .catch(err => {
+          callback(err)
+        })
+    } else {
+      callback(null, `module.exports = \'${source.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`);
+    }
+  } else {
+    includeGLSLFile(source, chunksPath, chunksExt, loader);    
+  }
 }
 
 module.exports = function(source) {
