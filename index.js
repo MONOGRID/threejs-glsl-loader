@@ -1,10 +1,15 @@
 const fs = require('fs');
 const path = require('path');
-const loaderUtils = require("loader-utils");
-const replaceAsync = require("string-replace-async");
+
+const loaderUtils = require('loader-utils');
+const replaceAsync = require('string-replace-async');
 
 const DEFAULT_CHUNKS_EXT = 'glsl';
 const DEFAULT_CHUNKS_PATH = '../ShaderChunk';
+
+function resolveFileExport(callback, source) {
+  callback(null, `module.exports = \'${source.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`);
+}
 
 function resolveDependency(loader, context, chunkPath) {
   return new Promise((resolve, reject) => {
@@ -27,51 +32,113 @@ function readFile(filePath, options) {
   });
 }
 
-function transformChunks(source, {chunksPath, chunksExt}, loader) {
-  loader.cacheable();
+function returnDependencyPromise(loader, context, includePath) {
+  return resolveDependency(loader, context, includePath)
+    .catch(err => { })
+
+    .then(chunkPath => {
+      if (chunkPath) {
+        loader.addDependency(chunkPath);
+        return readFile(chunkPath, 'utf-8');
+      }
+
+      return resolveDependency(loader, path.resolve(context, chunksPath), includePath)
+        .then(chunkPath => {
+          loader.addDependency(chunkPath);
+          return readFile(chunkPath, 'utf-8');
+        })
+    })
+
+    .then(file => {
+      return file.content;
+    });
+}
+
+function replaceGLSL(match, includePath, chunksPath, chunksExt, loader) {
+  includePath = includePath.trim().replace(/;|<|>/ig, '');
+
+  const ext = path.extname(includePath);
+  if (!ext) includePath = `${includePath}.${chunksExt}`;
+
+  const context = path.dirname(loader.resource);
+  return returnDependencyPromise(loader, context, includePath);
+}
+
+function includeThreeShader(loader, source, chunksExt) {
   const callback = loader.async();
 
   if (source.indexOf('#include') !== -1) {
-    // some includes detected, replace them (asyncronously)
-
-    replaceAsync(source,/#include (.*);/ig, (match, includePath) => {
+    replaceAsync(source, /#include (.*);/ig, (match, includePath) => {
       includePath = './' + includePath.trim().replace(/;|<|>|.\//ig, '');
 
       const ext = path.extname(includePath);
-      if(!ext) includePath = `${includePath}.${chunksExt}`;
+      if (!ext) includePath = `${includePath}.${chunksExt}`;
 
-      const context = path.dirname(loader.resource)
+      const context = path.dirname(loader.resource);
+      return returnDependencyPromise(loader, context, includePath);
+    })
 
-      return resolveDependency(loader, context, includePath)
-        .catch(err => {
-          // catch this, we'll retry with chunkPath
-        })
-        .then(chunkPath => {
-          if (chunkPath) {
-            // load was successful
-            loader.addDependency(chunkPath);
-            return readFile(chunkPath, 'utf-8');
-          }
-          // no cigar, retry chunkPath
-          return resolveDependency(loader, path.resolve(context, chunksPath), includePath)
-            .then(chunkPath => {
-              // success
-              loader.addDependency(chunkPath);
-              return readFile(chunkPath, 'utf-8');
-            })
-        })
-        .then(file => {
-          return file.content
-        });
-      })
-      .then(res => {
-        callback(null, `module.exports = \'${res.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`)
-      }).catch(err => {
-        callback(err)
-      })
+    .then(res => {
+      resolveFileExport(callback, res);
+    })
+
+    .catch(err => {
+      callback(err)
+    })
   } else {
-    // no includes, return string as it is
-    callback(null, `module.exports = \'${source.replace(new RegExp('\n', 'gm'), '\\n').replace(new RegExp('\r', 'gm'), '\\r').replace(new RegExp('\'', 'gm'), '\\\'')}\';`);
+    resolveFileExport(callback, source);
+  }
+}
+
+function includeCustomShader(loader, source, chunksPath, chunksExt, currentPath = './') {
+  const include = /#include(\s+)[^<](.+)[^>]/;
+  const callback = loader.async();
+
+  if (source.includes('/*') && source.includes('*/')) {
+    source.slice(0, source.indexOf('/*')) + source.slice(source.indexOf('*/') + 2, source.length);
+  }
+
+  const shader = source.split('\n');
+
+  for (let i = 0; i < shader.length; i++) {
+    if (shader[i].includes('//')) {
+      shader[i] = '';
+    }
+  }
+
+  source = shader.join('\n');
+
+  if (include.test(source)) {
+    replaceAsync(source, /#include (.*);/ig, (match, includePath) => {
+      const pathIndex = includePath.trim().lastIndexOf('/');
+
+      if (pathIndex !== -1) {
+        currentPath = includePath.slice(0, pathIndex + 1);
+        includePath = includePath.slice(pathIndex + 1, includePath.length);
+      }
+
+      return replaceGLSL(match, currentPath + includePath, chunksPath, chunksExt, loader);
+    })
+
+    .then(res => {
+      includeCustomShader(loader, res, chunksPath, chunksExt, currentPath);
+    })
+
+    .catch(err => {
+      callback(err);
+    })
+  } else {
+    resolveFileExport(callback, source);
+  }
+}
+
+function transformChunks(source, {chunksPath, chunksExt}, loader) {
+  loader.cacheable();
+
+  if (path.dirname(loader.resource).includes('node_modules')) {
+    includeThreeShader(loader, source, chunksExt);
+  } else {
+    includeCustomShader(loader, source, chunksPath, chunksExt);
   }
 }
 
