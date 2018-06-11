@@ -36,15 +36,15 @@ function includeShaderFile(loader, source, chunksPath, chunksExt, currentPath = 
     source.slice(0, source.indexOf('/*')) + source.slice(source.indexOf('*/') + 2, source.length);
   }
 
-  // const shader = source.split('\n');
+  const shader = source.split('\n');
 
-  // for (let i = 0; i < shader.length; i++) {
-  //   if (shader[i].includes('//')) {
-  //     shader[i] = '';
-  //   }
-  // }
+  for (let i = 0; i < shader.length; i++) {
+    if (shader[i].includes('//')) {
+      shader[i] = shader[i].slice(0, shader[i].indexOf('//'));
+    }
+  }
 
-  // source = shader.join('\n');
+  source = shader.join('\n');
 
   if (include.test(source)) {
     replaceAsync(source, /#include (.*);/ig, (match, includePath) => {
